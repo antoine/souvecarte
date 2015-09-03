@@ -13,49 +13,75 @@
 <body>
   <div id="map"></div>
   <script>
+//init the DB in local storage
 var db = new PouchDB('souvenirs');
 
-var map = L.map('map').setView([48.809, -3.373], 8);
-var osmUrl='http://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
-var osmAttrib='Map data © <a href="http://openstreetmap.org">OpenStreetMap</a> contributors';
-var osm = new L.TileLayer(osmUrl, {minZoom: 1, maxZoom: 20, attribution: osmAttrib});   
+//init the map in Bretagne
+var map = L.map('map', {attributionControl:false}).setView([48.809, -3.373], 8);
+map.clickBounce = 0;
+var debounceTimeout = 300;
 
-// start the map in South-East England
-//map.setView(new L.LatLng(51.3, 0.7),9);
+//add the osm tiles
+var osmUrl='http://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+var osm = new L.TileLayer(osmUrl, {minZoom: 1, maxZoom: 20});   
 map.addLayer(osm);
 
+var osmAttrib='© <a href="http://openstreetmap.org">OpenStreetMap</a> contributors';
+map.addControl(new L.control.attribution({prefix:false}).addAttribution(osmAttrib));
+
+//when clicking the map add a marker
 map.on('click', function(e) {
-  //gib_uni();
-  db.post({
-    latlng: e.latlng
-  }).then(function(res) {
-    console.log('marker saved');
-    console.log(res);
-  }).catch(function(err) {
-    console.log('could not save marker');
-    console.log(err);
-  });
-  addMakerToMap(e.latlng);
+  map.clickBounce= map.clickBounce+ 1;
+  setTimeout(function(){
+    if(map.clickBounce == 1){
+      //saving the marker in the DB
+      db.post({
+        latlng: e.latlng
+      }).then(function(res) {
+        console.log('marker saved');
+        addMakerToMap(res.id, e.latlng);
+      }).catch(function(err) {
+        console.log('could not save marker');
+        console.log(err);
+      });
+      map.clickBounce= 0;
+    }
+  }, debounceTimeout);
 });
 
-function addMakerToMap(latlng) {
+map.on('dblclick', function(event){
+  //debouncing single clicks
+  map.clickBounce= 0;
+  map.zoomIn();
+});
+
+function addMakerToMap(id, latlng) {
   marker = L.marker(latlng, { draggable:'true'});
   marker.on('dragend', function(event){
-    //var marker = event.target;
-    var position = marker.getLatLng();
-    //alert(position);
-    //marker.setLatLng([position],{draggable:'true'}).bindPopup(position).update();
+    db.get(id).then(function(doc) {
+      console.log('updating marker position to '+event.target.getLatLng());
+      return db.put({
+        _id: id,
+        _rev: doc._rev,
+        latlng:event.target.getLatLng()
+      });
+    }).then(function(response) {
+      console.log('marker position updated');
+    }).catch(function (err) {
+      console.log('could not update the marker position');
+      console.log(err);
+    });
   });
   marker.addTo(map);
 }
 
-
+//show all known markers on the map
 db.allDocs({
   include_docs:true
 }).then(function(res) {
   console.log('found '+res.rows.length+' markers');
   _.each(res.rows, function(markerInfos) {
-    addMakerToMap(markerInfos.doc.latlng);
+    addMakerToMap(markerInfos.id, markerInfos.doc.latlng);
   });
 }).catch(function(err) {
   console.log('could not fetch existing documents');
