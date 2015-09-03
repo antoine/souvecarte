@@ -1,0 +1,25 @@
+{
+  "name": "souvecarte",
+  "version": "0.0.1",
+  "homepage": "https://github.com/antoine/souvecarte",
+  "authors": [
+    "Antoine <antoine@delaunay.org>"
+  ],
+  "main": "index.html",
+  "moduleType": [
+    "globals"
+  ],
+  "license": "GPL-V2",
+  "ignore": [
+    "**/.*",
+    "node_modules",
+    "bower_components",
+    "test",
+    "tests"
+  ],
+  "dependencies": {
+    "leaflet": "~0.7.5",
+    "pouchdb": "~4.0.1",
+    "underscore": "~1.8.3"
+  }
+}
