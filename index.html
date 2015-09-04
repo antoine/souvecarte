@@ -5,6 +5,10 @@
   <script src='bower_components/leaflet/dist/leaflet.js'></script>
   <script src="bower_components/underscore/underscore-min.js"></script>
   <script src="bower_components/pouchdb/dist/pouchdb.min.js"></script>
+  <script src="bower_components/FileSaver.js/FileSaver.min.js"></script>
+  <script src="json2.js"></script>
+  <script src="bower_components/moment/min/moment.min.js"></script>
+  <!--  <script src="https://pouch.host/pouch.host.js"></script> -->
 
   <style>
 #map { height: 480px; }
@@ -15,6 +19,7 @@
   <script>
 //init the DB in local storage
 var db = new PouchDB('souvenirs');
+//var sync;
 
 //init the map in Bretagne
 var map = L.map('map', {attributionControl:false}).setView([48.809, -3.373], 8);
@@ -102,6 +107,44 @@ function deletedb() {
       console.log('deleting marker at '+markerInfos.doc.latlng);
       db.remove(markerInfos.doc);
     });
+  });
+}
+
+/*
+function login() {
+  PouchHost.login({
+        email: 'rouadec@gmail.com'
+            });
+}
+PouchHost.options('server', 'http://pimpator.com:3030/');
+
+PouchHost.session().then(function (result) {
+  if (result.ok) {
+    // We have a valid session, sync!
+    console.log('session found, synchronizing to '+result.db);
+    db.sync(
+        result.db, {live: true}
+        ).then(function(res){
+          console.log('synchronization ok');
+      console.log(res);
+    }).catch(function(err) {
+          console.log('could not synchronize');
+          console.log(err);
+        });
+  }
+});
+*/
+
+  </script>
+  <a onClick="javascript:onDownload();">Backup your data</a>
+  <script>
+function onDownload() {
+  db.allDocs({
+    include_docs:true
+  }).then(function(res) {
+    data = JSON.stringify(res.rows);
+    var blob = new Blob([data], {type: "application/json"});
+    saveAs(blob, "souvecarte_"+moment().format('YYYY-MM-DDTHH:mm')+".json");
   });
 }
 

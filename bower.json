@@ -20,6 +20,10 @@
   "dependencies": {
     "leaflet": "~0.7.5",
     "pouchdb": "~4.0.1",
-    "underscore": "~1.8.3"
+    "underscore": "~1.8.3",
+    "FileSaver.js": "filesaver.js#~0.0.2",
+    "blob": "*",
+    "moment" : "~2.10.6"
+
   }
 }
