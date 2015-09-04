@@ -1,22 +1,63 @@
 <html>
-<head>
-  <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-  <link rel="stylesheet" href="http://cdn.leafletjs.com/leaflet-0.7.5/leaflet.css" />
-  <script src='bower_components/leaflet/dist/leaflet.js'></script>
-  <script src="bower_components/underscore/underscore-min.js"></script>
-  <script src="bower_components/pouchdb/dist/pouchdb.min.js"></script>
-  <script src="bower_components/FileSaver.js/FileSaver.min.js"></script>
-  <script src="json2.js"></script>
-  <script src="bower_components/moment/min/moment.min.js"></script>
-  <!--  <script src="https://pouch.host/pouch.host.js"></script> -->
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <!-- Bootstrap core CSS -->
+    <link href="bower_components/bootstrap/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="http://cdn.leafletjs.com/leaflet-0.7.5/leaflet.css" />
+    <!-- mapping library-->
+    <script src='bower_components/leaflet/dist/leaflet.js'></script>
+    <!-- functionnal sugar-->
+    <script src="bower_components/underscore/underscore-min.js"></script>
+    <!-- local storage database, should allow syncing to cnetral database in time-->
+    <script src="bower_components/pouchdb/dist/pouchdb.min.js"></script>
+    <!-- provide a way for the user to save some data as a file-->
+    <script src="bower_components/FileSaver.js/FileSaver.min.js"></script>
+    <!-- because json serialization is still not a thing in javascript... -->
+    <script src="json2.js"></script>
+    <!-- sucky date handling in java* language seems to be a constant-->
+    <script src="bower_components/moment/min/moment.min.js"></script>
+    <!--  <script src="https://pouch.host/pouch.host.js"></script> -->
 
-  <style>
+    <style>
 #map { height: 480px; }
-  </style>
-</head>
-<body>
-  <div id="map"></div>
-  <script>
+    </style>
+  </head>
+  <body>
+    <div class="modal fade" id="myModal" tabindex="-1" role="dialog" aria-labelledby="myModalLabel" aria-hidden="true">
+      <div class="modal-dialog" role="document">
+        <div class="modal-content">
+          <div class="modal-header">
+            <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+              <span aria-hidden="true">&times;</span>
+              <span class="sr-only">Close</span>
+            </button>
+            <h4 class="modal-title" id="myModalLabel">Note</h4>
+          </div>
+          <div class="modal-body">
+            <div class="container-fluid">
+            <textarea id="myModal-content" class="form-control"> </textarea>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+            <button type="button" class="btn btn-primary" id="myModal-save">Save changes</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="container-fluid">
+      <div id="map"></div>
+      <button type="button" class="btn btn-link" onClick="javascript:onDownload();">Backup your data</a>
+    </div>
+    <!-- Bootstrap core JavaScript-->
+    <!-- Placed at the end of the document so the pages load faster -->
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.3/jquery.min.js"></script>
+    <script>window.jQuery || document.write('<script src="bower_components/jquery/dist/jquery.min.js"><\/script>')</script>
+    <script src="bower_components/bootstrap/dist/js/bootstrap.min.js"></script>
+    <script>
 //init the DB in local storage
 var db = new PouchDB('souvenirs');
 //var sync;
@@ -44,7 +85,7 @@ map.on('click', function(e) {
         latlng: e.latlng
       }).then(function(res) {
         console.log('marker saved');
-        addMakerToMap(res.id, e.latlng);
+        addMakerToMap(res.id, {latlng: e.latlng, note: 'something cool here'});
       }).catch(function(err) {
         console.log('could not save marker');
         console.log(err);
@@ -54,14 +95,20 @@ map.on('click', function(e) {
   }, debounceTimeout);
 });
 
+//debouncing single clicks
 map.on('dblclick', function(event){
-  //debouncing single clicks
   map.clickBounce= 0;
   map.zoomIn();
 });
 
-function addMakerToMap(id, latlng) {
-  marker = L.marker(latlng, { draggable:'true'});
+var markerInModal;
+
+function addMakerToMap(id, markerDoc) {
+
+  marker = L.marker(markerDoc.latlng, { draggable:'true'});
+  marker.id = id;
+  marker.bindPopup(markerDoc.note || 'nothing');
+  //updating the marker position when drag is over
   marker.on('dragend', function(event){
     db.get(id).then(function(doc) {
       console.log('updating marker position to '+event.target.getLatLng());
@@ -77,8 +124,50 @@ function addMakerToMap(id, latlng) {
       console.log(err);
     });
   });
+  marker.on('mouseover', function(event) {
+    event.target.openPopup();
+  });
+  //opening the modal loaded with the popup content on dblclick
+  marker.on('dblclick', function(event) {
+    markerInModal={
+      marker:event.target,
+      id:event.target.id
+    };
+
+    $('#myModal-content').val(event.target.getPopup().getContent());
+    $('#myModal').modal();
+  });
   marker.addTo(map);
 }
+
+//waiting for the DOM to be ready
+$(document).ready(function() {
+  
+  //when closing the modal with the save button we update
+  //the popup and save the new version in the db
+  $('#myModal-save').on('click', function(event) {
+    var marker = markerInModal.marker;
+    var id = markerInModal.id;
+    var note = $('#myModal-content').val();
+    marker.getPopup().setContent(note);
+    $('#myModal').modal('hide');
+
+    db.get(id).then(function(doc) {
+      console.log('updating marker text to '+marker.getLatLng());
+      return db.put({
+        _id: id,
+        _rev: doc._rev,
+        latlng:marker.getLatLng(),
+        note:note
+      });
+    }).then(function(response) {
+      console.log('marker note updated');
+    }).catch(function (err) {
+      console.log('could not update the marker note');
+      console.log(err);
+    });
+  });
+});
 
 //show all known markers on the map
 db.allDocs({
@@ -86,7 +175,7 @@ db.allDocs({
 }).then(function(res) {
   console.log('found '+res.rows.length+' markers');
   _.each(res.rows, function(markerInfos) {
-    addMakerToMap(markerInfos.id, markerInfos.doc.latlng);
+    addMakerToMap(markerInfos.id, markerInfos.doc);
   });
 }).catch(function(err) {
   console.log('could not fetch existing documents');
@@ -95,7 +184,7 @@ db.allDocs({
 
 function dbinfos() {
   db.info().then(function (info) {
-      console.log(info);
+    console.log(info);
   });
 }
 
@@ -110,34 +199,6 @@ function deletedb() {
   });
 }
 
-/*
-function login() {
-  PouchHost.login({
-        email: 'rouadec@gmail.com'
-            });
-}
-PouchHost.options('server', 'http://pimpator.com:3030/');
-
-PouchHost.session().then(function (result) {
-  if (result.ok) {
-    // We have a valid session, sync!
-    console.log('session found, synchronizing to '+result.db);
-    db.sync(
-        result.db, {live: true}
-        ).then(function(res){
-          console.log('synchronization ok');
-      console.log(res);
-    }).catch(function(err) {
-          console.log('could not synchronize');
-          console.log(err);
-        });
-  }
-});
-*/
-
-  </script>
-  <a onClick="javascript:onDownload();">Backup your data</a>
-  <script>
 function onDownload() {
   db.allDocs({
     include_docs:true
@@ -148,6 +209,31 @@ function onDownload() {
   });
 }
 
-  </script>
-</body>
+/*
+   function login() {
+   PouchHost.login({
+   email: 'rouadec@gmail.com'
+   });
+   }
+   PouchHost.options('server', 'http://pimpator.com:3030/');
+
+   PouchHost.session().then(function (result) {
+   if (result.ok) {
+// We have a valid session, sync!
+console.log('session found, synchronizing to '+result.db);
+db.sync(
+result.db, {live: true}
+).then(function(res){
+console.log('synchronization ok');
+console.log(res);
+}).catch(function(err) {
+console.log('could not synchronize');
+console.log(err);
+});
+}
+});
+ */
+
+    </script>
+  </body>
 </html>
