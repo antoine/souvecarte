@@ -26,7 +26,8 @@
     </style>
   </head>
   <body>
-    <div class="modal fade" id="myModal" tabindex="-1" role="dialog" aria-labelledby="myModalLabel" aria-hidden="true">
+    <!-- bootsrap modal html code -->
+    <div class="modal fade" id="myModal" tabindex="-1" role="dialog" aria-labelledby="myModal-label" aria-hidden="true">
       <div class="modal-dialog" role="document">
         <div class="modal-content">
           <div class="modal-header">
@@ -34,7 +35,7 @@
               <span aria-hidden="true">&times;</span>
               <span class="sr-only">Close</span>
             </button>
-            <h4 class="modal-title" id="myModalLabel">Note</h4>
+            <h4 class="modal-title" id="myModal-label">Note</h4>
           </div>
           <div class="modal-body">
             <div class="container-fluid">
@@ -48,9 +49,21 @@
         </div>
       </div>
     </div>
+
     <div class="container-fluid">
       <div id="map"></div>
-      <button type="button" class="btn btn-link" onClick="javascript:onDownload();">Backup your data</a>
+      <hr>
+      <h3>Clickety click</h3>
+      <p>Clicking on the map will add a marker with a default note</p>
+      <p>Notes will popup when mousing over a marker, they can be closed by clicking on it or mousing over another marker</p>
+      <p>Double-clicking on a marker will allow you to edit its note</p>
+      <p>Double-clicking on the map will zoom</p>
+      <h3>Data management</h3>
+      <p>Data is automatically stored in your browser local storage, you can use the button below to save it on your computer
+      <button type="button" class="btn btn-primary" onClick="javascript:onDownload();">Download your data</button></p>
+      <p>Once saved you can send the file to somebody else and they will be able to add them to their map using the following button
+      <button type="button" class="btn btn-primary" onClick="javascript:upload();">Upload data</button></p>
+      
     </div>
     <!-- Bootstrap core JavaScript-->
     <!-- Placed at the end of the document so the pages load faster -->
@@ -112,11 +125,8 @@ function addMakerToMap(id, markerDoc) {
   marker.on('dragend', function(event){
     db.get(id).then(function(doc) {
       console.log('updating marker position to '+event.target.getLatLng());
-      return db.put({
-        _id: id,
-        _rev: doc._rev,
-        latlng:event.target.getLatLng()
-      });
+      doc.latlng = event.target.getLatLng();
+      return db.put(doc);
     }).then(function(response) {
       console.log('marker position updated');
     }).catch(function (err) {
@@ -134,40 +144,36 @@ function addMakerToMap(id, markerDoc) {
       id:event.target.id
     };
 
-    $('#myModal-content').val(event.target.getPopup().getContent());
-    $('#myModal').modal();
+  //when closing the modal with the save button we update
+  //the popup and save the new version in the db
+    showTextareModal(event.target.getPopup().getContent(), 'What is it about this place that you would like to write about?', 'update note', function(event) {
+      var marker = markerInModal.marker;
+      var id = markerInModal.id;
+      var note = $('#myModal-content').val();
+      marker.getPopup().setContent(note);
+      $('#myModal').modal('hide');
+
+      db.get(id).then(function(doc) {
+        console.log('updating marker text to '+marker.getLatLng());
+        doc.note = note;
+        return db.put(doc);
+      }).then(function(response) {
+        console.log('marker note updated');
+      }).catch(function (err) {
+        console.log('could not update the marker note');
+        console.log(err);
+      });
+    });
   });
   marker.addTo(map);
 }
 
-//waiting for the DOM to be ready
-$(document).ready(function() {
-  
-  //when closing the modal with the save button we update
-  //the popup and save the new version in the db
-  $('#myModal-save').on('click', function(event) {
-    var marker = markerInModal.marker;
-    var id = markerInModal.id;
-    var note = $('#myModal-content').val();
-    marker.getPopup().setContent(note);
-    $('#myModal').modal('hide');
+function showTextareModal(content, placeholder, confirmVerb, onSaveEventHandler) {
+    $('#myModal-content').attr('placeholder', placeholder).val(content);
+    $('#myModal').modal();
+    $('#myModal-save').html(confirmVerb).on('click', onSaveEventHandler);
+}
 
-    db.get(id).then(function(doc) {
-      console.log('updating marker text to '+marker.getLatLng());
-      return db.put({
-        _id: id,
-        _rev: doc._rev,
-        latlng:marker.getLatLng(),
-        note:note
-      });
-    }).then(function(response) {
-      console.log('marker note updated');
-    }).catch(function (err) {
-      console.log('could not update the marker note');
-      console.log(err);
-    });
-  });
-});
 
 //show all known markers on the map
 db.allDocs({
@@ -209,6 +215,31 @@ function onDownload() {
   });
 }
 
+function upload() {
+    showTextareModal('','paste here data downloaded from this site', 'add', function(event) {
+      var data = $('#myModal-content').val();
+
+      var rows = JSON.parse(data);      
+      _.each(rows, function(row) {
+
+        db.get(row.id).then(function(doc) {
+          //already known marker, do not do anything
+          console.log('not adding already present marker '+row.id);
+        }).catch(function (err) {
+          if (err.status == 404) {
+            db.put(row.doc);
+            addMakerToMap(row.id, row.doc);
+          } else {
+            console.log('error fetching from database prior to upload');
+            console.log(err);
+          }
+        });
+      });
+      $('#myModal').modal('hide');
+
+    });
+}
+
 /*
    function login() {
    PouchHost.login({
@@ -233,6 +264,10 @@ console.log(err);
 }
 });
  */
+//waiting for the DOM to be ready
+$(document).ready(function() {
+  
+});
 
     </script>
   </body>
