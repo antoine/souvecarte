@@ -63,8 +63,10 @@
       <button type="button" class="btn btn-primary" onClick="javascript:onDownload();">Download your data</button></p>
       <p>Once saved you can send the file to somebody else and they will be able to add them to their map using the following button
       <button type="button" class="btn btn-primary" onClick="javascript:upload();">Upload data</button></p>
-      
     </div>
+
+
+
     <!-- Bootstrap core JavaScript-->
     <!-- Placed at the end of the document so the pages load faster -->
     <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.3/jquery.min.js"></script>
@@ -76,7 +78,8 @@ var db = new PouchDB('souvenirs');
 //var sync;
 
 //init the map in Bretagne
-var map = L.map('map', {attributionControl:false}).setView([48.809, -3.373], 8);
+var bretagne = new L.latLng(48.809, -3.373);
+var map = L.map('map', {attributionControl:false}).setView(bretagne, 8);
 map.clickBounce = 0;
 var debounceTimeout = 300;
 
@@ -98,6 +101,7 @@ map.on('click', function(e) {
         latlng: e.latlng
       }).then(function(res) {
         console.log('marker saved');
+        
         addMakerToMap(res.id, {latlng: e.latlng, note: 'something cool here'});
       }).catch(function(err) {
         console.log('could not save marker');
@@ -117,6 +121,8 @@ map.on('dblclick', function(event){
 var markerInModal;
 
 function addMakerToMap(id, markerDoc) {
+
+  console.log('adding marker at '+markerDoc.latlng.lat+','+markerDoc.latlng.lng);
 
   marker = L.marker(markerDoc.latlng, { draggable:'true'});
   marker.id = id;
@@ -175,18 +181,52 @@ function showTextareModal(content, placeholder, confirmVerb, onSaveEventHandler)
 }
 
 
-//show all known markers on the map
+function pushBoundaries(latlng, southWest, northEast) {
+
+  if (latlng.lat < southWest.lat) {
+    southWest.lat = latlng.lat;
+  } else if (latlng.lat >northEast.lat) {
+    northEast.lat = latlng.lat;
+  }
+  if (latlng.lng < southWest.lng) {
+    southWest.lng = latlng.lng;
+  } else if (latlng.lng >northEast.lng) {
+    northEast.lng = latlng.lng;
+  }
+  
+}
+
+function makeSomeSpace(southWest, northEast) {
+
+    southWest.lat = southWest.lat-0.1;
+    northEast.lat = northEast.lat+0.1;
+    southWest.lng = southWest.lng-0.1;
+    northEast.lng = northEast.lng+0.1;
+  
+}
+
 db.allDocs({
   include_docs:true
 }).then(function(res) {
+//show all known markers on the map on startup
+  var southWest = {lat:bretagne.lat, lng:bretagne.lng};
+var northEast = {lat:bretagne.lat, lng:bretagne.lng};
   console.log('found '+res.rows.length+' markers');
   _.each(res.rows, function(markerInfos) {
     addMakerToMap(markerInfos.id, markerInfos.doc);
+    pushBoundaries(markerInfos.doc.latlng, southWest, northEast);
   });
+  //moving the map to include all markers
+  console.log('boundaries of known points are '+southWest.lat+','+southWest.lng+' by '+northEast.lat+','+northEast.lng);
+  makeSomeSpace(southWest, northEast);
+  console.log('boundaries of known points are '+southWest.lat+','+southWest.lng+' by '+northEast.lat+','+northEast.lng);
+  map.fitBounds(L.latLngBounds(southWest, northEast));
 }).catch(function(err) {
   console.log('could not fetch existing documents');
   console.log(err);
 });
+
+
 
 function dbinfos() {
   db.info().then(function (info) {
