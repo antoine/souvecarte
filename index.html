@@ -63,6 +63,8 @@
       <button type="button" class="btn btn-primary" onClick="javascript:onDownload();">Download your data</button></p>
       <p>Once saved you can send the file to somebody else and they will be able to add them to their map using the following button
       <button type="button" class="btn btn-primary" onClick="javascript:upload();">Upload data</button></p>
+      <p>You can delete all the data on this map using
+      <button type="button" class="btn btn-danger" onClick="javascript:deletedb();">Delete map</button></p>
     </div>
 
 
@@ -82,6 +84,8 @@ var bretagne = new L.latLng(48.809, -3.373);
 var map = L.map('map', {attributionControl:false}).setView(bretagne, 8);
 map.clickBounce = 0;
 var debounceTimeout = 300;
+
+var allLayers = L.layerGroup();
 
 //add the osm tiles
 var osmUrl='http://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
@@ -125,6 +129,7 @@ function addMakerToMap(id, markerDoc) {
   console.log('adding marker at '+markerDoc.latlng.lat+','+markerDoc.latlng.lng);
 
   marker = L.marker(markerDoc.latlng, { draggable:'true'});
+  allLayers.addLayer(marker);
   marker.id = id;
   marker.bindPopup(markerDoc.note || 'nothing');
   //updating the marker position when drag is over
@@ -243,6 +248,12 @@ function deletedb() {
       db.remove(markerInfos.doc);
     });
   });
+
+  //remove marker from map
+  allLayers.eachLayer(function (layer) {
+    map.removeLayer(layer);
+  });
+
 }
 
 function onDownload() {
@@ -256,6 +267,7 @@ function onDownload() {
 }
 
 function upload() {
+  //TODO group all uploaded marker in another group layer to allow undo of upload
     showTextareModal('','paste here data downloaded from this site', 'add', function(event) {
       var data = $('#myModal-content').val();
 
@@ -267,6 +279,7 @@ function upload() {
           console.log('not adding already present marker '+row.id);
         }).catch(function (err) {
           if (err.status == 404) {
+            delete row.doc._rev;
             db.put(row.doc);
             addMakerToMap(row.id, row.doc);
           } else {
