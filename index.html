@@ -15,11 +15,12 @@
     <script src="bower_components/pouchdb/dist/pouchdb.min.js"></script>
     <!-- provide a way for the user to save some data as a file-->
     <script src="bower_components/FileSaver.js/FileSaver.min.js"></script>
-    <!-- because json serialization is still not a thing in javascript... -->
-    <script src="json2.js"></script>
     <!-- sucky date handling in java* language seems to be a constant-->
     <script src="bower_components/moment/min/moment.min.js"></script>
     <!--  <script src="https://pouch.host/pouch.host.js"></script> -->
+    <script src="filereader.js"></script>
+    <!-- because json serialization is still not a thing in javascript... -->
+    <script src="json2.js"></script>
 
     <style>
 #map { height: 480px; }
@@ -39,32 +40,71 @@
           </div>
           <div class="modal-body">
             <div class="container-fluid">
-            <textarea id="myModal-content" class="form-control"> </textarea>
+              <textarea id="myModal-content" class="form-control" placeholder="so, what is this place about?"> </textarea> </p>
             </div>
           </div>
           <div class="modal-footer">
             <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
-            <button type="button" class="btn btn-primary" id="myModal-save">Save changes</button>
+            <button type="button" class="btn btn-primary" id="myModal-save">Update note</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- bootsrap modal html code -->
+    <div class="modal fade" id="myModalUp" tabindex="-1" role="dialog" aria-labelledby="myModalUp-label" aria-hidden="true">
+      <div class="modal-dialog" role="document">
+        <div class="modal-content">
+          <div class="modal-header">
+            <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+              <span aria-hidden="true">&times;</span>
+              <span class="sr-only">Close</span>
+            </button>
+            <h4 class="modal-title" id="myModalUp-label">Note</h4>
+          </div>
+          <div class="modal-body">
+            <div class="container-fluid">
+              <p>Choose a file:
+              <input type="file" id="myModalUp-fileinput" name="file-input" > </p>
+              <textarea id="myModalUp-content" class="form-control" placeholder="You can also drop a file on this area or directly paste the data here"> </textarea> </p>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+            <button type="button" class="btn btn-primary" id="myModalUp-save">Add to map</button>
           </div>
         </div>
       </div>
     </div>
 
     <div class="container-fluid">
+
       <div id="map"></div>
+
       <hr>
+
       <h3>Clickety click</h3>
-      <p>Clicking on the map will add a marker with a default note</p>
-      <p>Notes will popup when mousing over a marker, they can be closed by clicking on it or mousing over another marker</p>
-      <p>Double-clicking on a marker will allow you to edit its note</p>
-      <p>Double-clicking on the map will zoom</p>
+
+      <ul>
+        <li>Clicking on the map will add a marker with a default note</li>
+        <li>Notes will popup when mousing over a marker, they can be closed by clicking on it or mousing over another marker</li>
+        <li>Double-clicking on a marker will allow you to edit its note</li>
+        <li>Double-clicking on the map will zoom</li>
+        <li>Drag&amp;drop a souvecarte file to add its markers on the map</li>
+      </ul>
+
       <h3>Data management</h3>
-      <p>Data is automatically stored in your browser local storage, you can use the button below to save it on your computer
-      <button type="button" class="btn btn-primary" onClick="javascript:onDownload();">Download your data</button></p>
-      <p>Once saved you can send the file to somebody else and they will be able to add them to their map using the following button
-      <button type="button" class="btn btn-primary" onClick="javascript:upload();">Upload data</button></p>
-      <p>You can delete all the data on this map using
-      <button type="button" class="btn btn-danger" onClick="javascript:deletedb();">Delete map</button></p>
+
+      <p><button type="button" class="btn btn-primary" onClick="javascript:onDownload();">Download your data</button>
+      You can use the button below to save it on your computer and then send it to somebody else</p>
+      
+      <p><button type="button" class="btn btn-primary" onClick="javascript:uploadDataModal();">Upload data</button> 
+      To add data contained in a file. The file can also be dragged&amp;dropped on the map.
+
+      <h3>I can't take it anymore</h3>
+
+      <p><button type="button" class="btn btn-danger" onClick="javascript:deletedb();">Delete map</button>
+      Will delete all the data on this map</p>
+
     </div>
 
 
@@ -157,7 +197,14 @@ function addMakerToMap(id, markerDoc) {
 
   //when closing the modal with the save button we update
   //the popup and save the new version in the db
-    showTextareModal(event.target.getPopup().getContent(), 'What is it about this place that you would like to write about?', 'update note', function(event) {
+    updateNoteModal(event.target.getPopup().getContent());
+  });
+  marker.addTo(map);
+}
+
+function updateNoteModal(content) {
+    $('#myModal-content').val(content);
+    $('#myModal-save').on('click', function(event) {
       var marker = markerInModal.marker;
       var id = markerInModal.id;
       var note = $('#myModal-content').val();
@@ -175,16 +222,41 @@ function addMakerToMap(id, markerDoc) {
         console.log(err);
       });
     });
-  });
-  marker.addTo(map);
-}
-
-function showTextareModal(content, placeholder, confirmVerb, onSaveEventHandler) {
-    $('#myModal-content').attr('placeholder', placeholder).val(content);
     $('#myModal').modal();
-    $('#myModal-save').html(confirmVerb).on('click', onSaveEventHandler);
 }
 
+function uploadDataModal() {
+    $('#myModalUp-save').on('click', function(event) {
+      var data = $('#myModalUp-content').val();
+      addMarkersToMap(data);
+
+      $('#myModalUp').modal('hide');
+
+    });
+    $('#myModalUp-content').val('');
+    $('#myModalUp-fileinput').val('');
+    $('#myModalUp').modal();
+}
+
+function addMarkersToMap(jsonDbExport) {
+      var rows = JSON.parse(jsonDbExport);      
+      _.each(rows, function(row) {
+
+        db.get(row.id).then(function(doc) {
+          //already known marker, do not do anything
+          console.log('not adding already present marker '+row.id);
+        }).catch(function (err) {
+          if (err.status == 404) {
+            delete row.doc._rev;
+            db.put(row.doc);
+            addMakerToMap(row.id, row.doc);
+          } else {
+            console.log('error fetching from database prior to upload');
+            console.log(err);
+          }
+        });
+      });
+}
 
 function pushBoundaries(latlng, southWest, northEast) {
 
@@ -266,32 +338,6 @@ function onDownload() {
   });
 }
 
-function upload() {
-  //TODO group all uploaded marker in another group layer to allow undo of upload
-    showTextareModal('','paste here data downloaded from this site', 'add', function(event) {
-      var data = $('#myModal-content').val();
-
-      var rows = JSON.parse(data);      
-      _.each(rows, function(row) {
-
-        db.get(row.id).then(function(doc) {
-          //already known marker, do not do anything
-          console.log('not adding already present marker '+row.id);
-        }).catch(function (err) {
-          if (err.status == 404) {
-            delete row.doc._rev;
-            db.put(row.doc);
-            addMakerToMap(row.id, row.doc);
-          } else {
-            console.log('error fetching from database prior to upload');
-            console.log(err);
-          }
-        });
-      });
-      $('#myModal').modal('hide');
-
-    });
-}
 
 /*
    function login() {
@@ -318,9 +364,44 @@ console.log(err);
 });
  */
 //waiting for the DOM to be ready
-$(document).ready(function() {
-  
-});
+  $(document).ready(function() {
+
+      var options = {
+        accept:'application/json',
+        readAsMap: {
+          'text/*': 'Text',
+          'application/json': 'Text'
+        },
+        on: {
+          load: function(e, file) {
+            $('#myModalUp-content').val(e.target.result);
+          },
+          skip: function(e, file) {
+            alert('could not load file, please check that it is a valid souvecarte backup file');
+          }
+        }
+      };
+
+
+      FileReaderJS.setupInput(document.getElementById('myModalUp-fileinput'), options);
+      FileReaderJS.setupDrop(document.getElementById('myModalUp-content'), options);
+      var optionsDropOnMap = {
+        accept:'application/json',
+        readAsMap: {
+          'text/*': 'Text',
+          'application/json': 'Text'
+        },
+        on: {
+          load: function(e, file) {
+            addMarkersToMap(e.target.result);
+          },
+          skip: function(e, file) {
+            alert('could not load file, please check that it is a valid souvecarte backup file');
+          }
+        }
+      };
+      FileReaderJS.setupDrop(document.getElementById('map'), optionsDropOnMap);
+    });
 
     </script>
   </body>
