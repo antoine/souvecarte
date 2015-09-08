@@ -125,6 +125,11 @@ var map = L.map('map', {attributionControl:false}).setView(bretagne, 8);
 map.clickBounce = 0;
 var debounceTimeout = 300;
 
+//used to store the marker whose note we are currently editing
+var markerInModal;
+
+var whatHappenOnNextMapClick;
+
 var allLayers = L.layerGroup();
 
 //add the osm tiles
@@ -135,11 +140,24 @@ map.addLayer(osm);
 var osmAttrib='© <a href="http://openstreetmap.org">OpenStreetMap</a> contributors';
 map.addControl(new L.control.attribution({prefix:false}).addAttribution(osmAttrib));
 
+var markerOnNextClick= L.control({
+  position : 'bottomleft'
+});
+markerOnNextClick.onAdd = function(map) {
+  this._div = L.DomUtil.create('div', 'leaflet-bar');
+  this._div.innerHTML = "<a href='' id='addMarkerOnNextClick'>m</a><a href='' id='startLineOnNextClick'>l</a>";
+  return this._div;
+}
+markerOnNextClick.addTo(map);
+
 //when clicking the map add a marker
 map.on('click', function(e) {
   map.clickBounce= map.clickBounce+ 1;
   setTimeout(function(){
     if(map.clickBounce == 1){
+      var addWhat = whatHappenOnNextMapClick || 'marker';
+      
+      if (addWhat === 'marker') {
       //saving the marker in the DB
       db.post({
         latlng: e.latlng
@@ -151,6 +169,17 @@ map.on('click', function(e) {
         console.log('could not save marker');
         console.log(err);
       });
+      } else if (addWhat === 'line') {
+        if (map.currentLine) {
+          map.currentLine.addLatLng(e.latlng);
+        } else {
+          map.currentLine = L.polyline([e.latlng]);
+          map.currentLine.addTo(map);
+        }
+
+      } else {
+        console.log('do not know how to add a '+addWhat);
+      }
       map.clickBounce= 0;
     }
   }, debounceTimeout);
@@ -162,7 +191,6 @@ map.on('dblclick', function(event){
   map.zoomIn();
 });
 
-var markerInModal;
 
 function addMakerToMap(id, markerDoc) {
 
@@ -190,6 +218,7 @@ function addMakerToMap(id, markerDoc) {
   });
   //opening the modal loaded with the popup content on dblclick
   marker.on('dblclick', function(event) {
+    //but first saving the clicked marker in our global var
     markerInModal={
       marker:event.target,
       id:event.target.id
@@ -338,6 +367,55 @@ function onDownload() {
   });
 }
 
+  $(document).ready(function() {
+
+    $("#addMarkerOnNextClick").on('click', function() {
+      whatHappenOnNextMapClick = 'marker';
+      return false;
+    });
+
+    $("#startLineOnNextClick").on('click', function() {
+      whatHappenOnNextMapClick = 'line';
+      return false;
+    });
+
+    var options = {
+      accept:'application/json',
+      readAsMap: {
+        'text/*': 'Text',
+        'application/json': 'Text'
+      },
+      on: {
+        load: function(e, file) {
+          $('#myModalUp-content').val(e.target.result);
+        },
+        skip: function(e, file) {
+          alert('could not load file, please check that it is a valid souvecarte backup file');
+        }
+      }
+    };
+
+
+    FileReaderJS.setupInput(document.getElementById('myModalUp-fileinput'), options);
+    FileReaderJS.setupDrop(document.getElementById('myModalUp-content'), options);
+    var optionsDropOnMap = {
+      accept:'application/json',
+      readAsMap: {
+        'text/*': 'Text',
+        'application/json': 'Text'
+      },
+      on: {
+        load: function(e, file) {
+          addMarkersToMap(e.target.result);
+        },
+        skip: function(e, file) {
+          alert('could not load file, please check that it is a valid souvecarte backup file');
+        }
+      }
+    };
+    FileReaderJS.setupDrop(document.getElementById('map'), optionsDropOnMap);
+  });
+
 
 /*
    function login() {
@@ -364,44 +442,6 @@ console.log(err);
 });
  */
 //waiting for the DOM to be ready
-  $(document).ready(function() {
-
-      var options = {
-        accept:'application/json',
-        readAsMap: {
-          'text/*': 'Text',
-          'application/json': 'Text'
-        },
-        on: {
-          load: function(e, file) {
-            $('#myModalUp-content').val(e.target.result);
-          },
-          skip: function(e, file) {
-            alert('could not load file, please check that it is a valid souvecarte backup file');
-          }
-        }
-      };
-
-
-      FileReaderJS.setupInput(document.getElementById('myModalUp-fileinput'), options);
-      FileReaderJS.setupDrop(document.getElementById('myModalUp-content'), options);
-      var optionsDropOnMap = {
-        accept:'application/json',
-        readAsMap: {
-          'text/*': 'Text',
-          'application/json': 'Text'
-        },
-        on: {
-          load: function(e, file) {
-            addMarkersToMap(e.target.result);
-          },
-          skip: function(e, file) {
-            alert('could not load file, please check that it is a valid souvecarte backup file');
-          }
-        }
-      };
-      FileReaderJS.setupDrop(document.getElementById('map'), optionsDropOnMap);
-    });
 
     </script>
   </body>
