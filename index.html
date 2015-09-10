@@ -158,23 +158,47 @@ map.on('click', function(e) {
       var addWhat = whatHappenOnNextMapClick || 'marker';
       
       if (addWhat === 'marker') {
-      //saving the marker in the DB
-      db.post({
-        latlng: e.latlng
-      }).then(function(res) {
-        console.log('marker saved');
-        
-        addMakerToMap(res.id, {latlng: e.latlng, note: 'something cool here'});
-      }).catch(function(err) {
-        console.log('could not save marker');
-        console.log(err);
-      });
+        //saving the marker in the DB
+        db.post({
+          type: addWhat,
+          latlng: e.latlng
+        }).then(function(res) {
+          addMakerToMap(res.id, {latlng: e.latlng, note: 'something cool here'});
+        }).catch(function(err) {
+          console.log('could not save marker');
+          console.log(err);
+        });
+
       } else if (addWhat === 'line') {
         if (map.currentLine) {
+          db.get(map.currentLineId).then(function(doc) {
+            console.log('adding line point  '+e.latlng);
+            doc.latlngs.push(e.latlng);
+            return db.put(doc);
+          }).then(function(response) {
+            console.log('line point added');
+          }).catch(function (err) {
+            console.log('could not add the line point');
+            console.log(err);
+          });
           map.currentLine.addLatLng(e.latlng);
         } else {
-          map.currentLine = L.polyline([e.latlng]);
-          map.currentLine.addTo(map);
+          console.log('starting line');
+          //saving the line in the DB
+          db.post({
+            type: addWhat,
+            latlngs: [e.latlng]
+          }).then(function(res) {
+            //we start the line with two points so that
+            //we can replace the last one with the cursor position
+            //on mousemove
+            map.currentLineId = res.id;
+            map.currentLine = L.polyline([e.latlng, e.latlng]);
+            map.currentLine.addTo(map);
+          }).catch(function(err) {
+            console.log('could not save line');
+            console.log(err);
+          });
         }
 
       } else {
@@ -189,6 +213,15 @@ map.on('click', function(e) {
 map.on('dblclick', function(event){
   map.clickBounce= 0;
   map.zoomIn();
+});
+
+map.on('mousemove', function(e) {
+  //we do not update the last point when we might be in the process
+  //of adding one (clickBounce != 0) or we will record the latlng 
+  //of the cursor 300ms after the click
+  if (map.currentLine && map.clickBounce <=0 ) {
+    map.currentLine.spliceLatLngs(-1, 1, e.latlng);
+  }
 });
 
 
@@ -316,11 +349,19 @@ db.allDocs({
 }).then(function(res) {
 //show all known markers on the map on startup
   var southWest = {lat:bretagne.lat, lng:bretagne.lng};
-var northEast = {lat:bretagne.lat, lng:bretagne.lng};
-  console.log('found '+res.rows.length+' markers');
+  var northEast = {lat:bretagne.lat, lng:bretagne.lng};
+
+  console.log('found '+res.rows.length+' elements');
   _.each(res.rows, function(markerInfos) {
-    addMakerToMap(markerInfos.id, markerInfos.doc);
-    pushBoundaries(markerInfos.doc.latlng, southWest, northEast);
+    //historical reason
+    var type = markerInfos.doc.type || 'marker';
+    if (type === 'marker') {
+      addMakerToMap(markerInfos.id, markerInfos.doc);
+      pushBoundaries(markerInfos.doc.latlng, southWest, northEast);
+    } else if (type === 'line') {
+      var line = L.polyline(markerInfos.doc.latlngs);
+      line.addTo(map);
+    }
   });
   //moving the map to include all markers
   console.log('boundaries of known points are '+southWest.lat+','+southWest.lng+' by '+northEast.lat+','+northEast.lng);
@@ -371,6 +412,8 @@ function onDownload() {
 
     $("#addMarkerOnNextClick").on('click', function() {
       whatHappenOnNextMapClick = 'marker';
+      map.currentLine.spliceLatLngs(-1,1);
+      map.currentLine = null;
       return false;
     });
 
