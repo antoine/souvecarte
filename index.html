@@ -36,7 +36,7 @@
               <span aria-hidden="true">&times;</span>
               <span class="sr-only">Close</span>
             </button>
-            <h4 class="modal-title" id="myModal-label">Note</h4>
+            <h4 class="modal-title" id="myModal-label">Update this</h4>
           </div>
           <div class="modal-body">
             <div class="container-fluid">
@@ -44,8 +44,13 @@
             </div>
           </div>
           <div class="modal-footer">
+            <div style="float:left;">
+              <button type="button" class="btn btn-danger" data-dismiss="modal" id="myModal-delete">Delete marker</button>
+            </div>
+            <div style="float:right;">
             <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
             <button type="button" class="btn btn-primary" id="myModal-save">Update note</button>
+            </div>
           </div>
         </div>
       </div>
@@ -86,6 +91,8 @@
 
       <ul>
         <li>Clicking on the map will add a marker with a default note</li>
+        <li>Clicking on the control in the bottom left corner of the map you can also create lines with the 'l' option.</li>
+        <li>Lines do not have popups, you need to switch back to marker mode by clicking the 'm' option to finish a line</li>
         <li>Notes will popup when mousing over a marker, they can be closed by clicking on it or mousing over another marker</li>
         <li>Double-clicking on a marker will allow you to edit its note</li>
         <li>Double-clicking on the map will zoom</li>
@@ -125,8 +132,6 @@ var map = L.map('map', {attributionControl:false}).setView(bretagne, 8);
 map.clickBounce = 0;
 var debounceTimeout = 300;
 
-//used to store the marker whose note we are currently editing
-var markerInModal;
 
 var whatHappenOnNextMapClick;
 
@@ -171,7 +176,7 @@ map.on('click', function(e) {
 
       } else if (addWhat === 'line') {
         if (map.currentLine) {
-          db.get(map.currentLineId).then(function(doc) {
+          db.get(map.currentLine.id).then(function(doc) {
             console.log('adding line point  '+e.latlng);
             doc.latlngs.push(e.latlng);
             return db.put(doc);
@@ -192,9 +197,7 @@ map.on('click', function(e) {
             //we start the line with two points so that
             //we can replace the last one with the cursor position
             //on mousemove
-            map.currentLineId = res.id;
-            map.currentLine = L.polyline([e.latlng, e.latlng]);
-            map.currentLine.addTo(map);
+            map.currentLine = addLineToMap(res.id, {latlngs: [e.latlng, e.latlng], note : "something nice on the way"});
           }).catch(function(err) {
             console.log('could not save line');
             console.log(err);
@@ -224,6 +227,19 @@ map.on('mousemove', function(e) {
   }
 });
 
+function addLineToMap(id, lineDoc) {
+  var line = L.polyline(lineDoc.latlngs);
+  line.id = id;
+  allLayers.addLayer(line);
+  //opening the modal loaded with the popup content on dblclick
+  line.on('dblclick', function(event) {
+    //when closing the modal with the save button we update
+    //the popup and save the new version in the db
+    updateNoteModal(event.target);
+  });
+  line.addTo(map);
+  return line;
+}
 
 function addMakerToMap(id, markerDoc) {
 
@@ -251,30 +267,39 @@ function addMakerToMap(id, markerDoc) {
   });
   //opening the modal loaded with the popup content on dblclick
   marker.on('dblclick', function(event) {
-    //but first saving the clicked marker in our global var
-    markerInModal={
-      marker:event.target,
-      id:event.target.id
-    };
-
-  //when closing the modal with the save button we update
-  //the popup and save the new version in the db
-    updateNoteModal(event.target.getPopup().getContent());
+    //when closing the modal with the save button we update
+    //the popup and save the new version in the db
+    updateNoteModal(event.target, event.target.getPopup().getContent());
   });
   marker.addTo(map);
 }
 
-function updateNoteModal(content) {
-    $('#myModal-content').val(content);
+function updateNoteModal(noteOwner, content) {
+  
+    if (content) {
+     $('#myModal-content').show().val(content);
+     $('#myModal-save').show();
+    } else {
+      $('#myModal-content').hide();
+     $('#myModal-save').hide();
+    }
+
+    $('#myModal-content').focus();
+
+    //removing previous handler
+    $('#myModal-save').off('click');
+    $('#myModal-delete').off('click');
+
     $('#myModal-save').on('click', function(event) {
-      var marker = markerInModal.marker;
-      var id = markerInModal.id;
+      var marker = noteOwner; 
+      var id = noteOwner.id;
+      console.log('updating marker '+id+ ' note ');
       var note = $('#myModal-content').val();
       marker.getPopup().setContent(note);
       $('#myModal').modal('hide');
 
       db.get(id).then(function(doc) {
-        console.log('updating marker text to '+marker.getLatLng());
+        //console.log('updating marker '+id+ ' note ');
         doc.note = note;
         return db.put(doc);
       }).then(function(response) {
@@ -283,6 +308,26 @@ function updateNoteModal(content) {
         console.log('could not update the marker note');
         console.log(err);
       });
+    });
+
+    $('#myModal-delete').on('click', function(event) {
+      var marker = noteOwner; 
+      var id = noteOwner.id;
+      console.log('deleting marker '+id);
+
+      $('#myModal').modal('hide');
+      map.removeLayer(marker);
+
+      db.get(id).then(function(doc) {
+        return db.remove(doc);
+      }).then(function (result) {
+        console.log('marker removed');
+      }).catch(function (err) {
+        console.log('could not remove the marker');
+        console.log(err);
+      });
+
+
     });
     $('#myModal').modal();
 }
@@ -302,8 +347,8 @@ function uploadDataModal() {
 
 function addMarkersToMap(jsonDbExport) {
       var rows = JSON.parse(jsonDbExport);      
+      var newRows = [];
       _.each(rows, function(row) {
-
         db.get(row.id).then(function(doc) {
           //already known marker, do not do anything
           console.log('not adding already present marker '+row.id);
@@ -311,15 +356,57 @@ function addMarkersToMap(jsonDbExport) {
           if (err.status == 404) {
             delete row.doc._rev;
             db.put(row.doc);
-            addMakerToMap(row.id, row.doc);
+            bulkAdd([row]);
           } else {
             console.log('error fetching from database prior to upload');
             console.log(err);
           }
         });
       });
+
 }
 
+//loading from the DB on initial page load
+
+db.allDocs({
+  include_docs:true
+}).then(function(res) {
+  //show all known markers on the map on startup
+  var southWest = {lat:bretagne.lat, lng:bretagne.lng};
+  var northEast = {lat:bretagne.lat, lng:bretagne.lng};
+  console.log('found '+res.rows.length+' elements');
+
+  bulkAdd(res.rows, function(latlng) {
+      pushBoundaries(latlng, southWest, northEast);
+  });
+
+  //moving the map to include all markers
+  console.log('boundaries of known points are '+southWest.lat+','+southWest.lng+' by '+northEast.lat+','+northEast.lng);
+  makeSomeSpace(southWest, northEast);
+  map.fitBounds(L.latLngBounds(southWest, northEast));
+}).catch(function(err) {
+  console.log('could not fetch existing documents');
+  console.log(err);
+});
+
+function bulkAdd(rows, moveMap) {
+
+  _.each(rows, function(markerInfos) {
+    //historical reason
+    var type = markerInfos.doc.type || 'marker';
+    if (type === 'marker') {
+      addMakerToMap(markerInfos.id, markerInfos.doc);
+      if (moveMap) {
+        moveMap(markerInfos.doc.latlng);
+      }
+    } else if (type === 'line') {
+      addLineToMap(markerInfos.id, markerInfos.doc);
+    }
+  });
+
+}
+
+//centering the map when initially loading the markers
 function pushBoundaries(latlng, southWest, northEast) {
 
   if (latlng.lat < southWest.lat) {
@@ -344,37 +431,6 @@ function makeSomeSpace(southWest, northEast) {
   
 }
 
-db.allDocs({
-  include_docs:true
-}).then(function(res) {
-//show all known markers on the map on startup
-  var southWest = {lat:bretagne.lat, lng:bretagne.lng};
-  var northEast = {lat:bretagne.lat, lng:bretagne.lng};
-
-  console.log('found '+res.rows.length+' elements');
-  _.each(res.rows, function(markerInfos) {
-    //historical reason
-    var type = markerInfos.doc.type || 'marker';
-    if (type === 'marker') {
-      addMakerToMap(markerInfos.id, markerInfos.doc);
-      pushBoundaries(markerInfos.doc.latlng, southWest, northEast);
-    } else if (type === 'line') {
-      var line = L.polyline(markerInfos.doc.latlngs);
-      line.addTo(map);
-    }
-  });
-  //moving the map to include all markers
-  console.log('boundaries of known points are '+southWest.lat+','+southWest.lng+' by '+northEast.lat+','+northEast.lng);
-  makeSomeSpace(southWest, northEast);
-  console.log('boundaries of known points are '+southWest.lat+','+southWest.lng+' by '+northEast.lat+','+northEast.lng);
-  map.fitBounds(L.latLngBounds(southWest, northEast));
-}).catch(function(err) {
-  console.log('could not fetch existing documents');
-  console.log(err);
-});
-
-
-
 function dbinfos() {
   db.info().then(function (info) {
     console.log(info);
@@ -395,6 +451,9 @@ function deletedb() {
   allLayers.eachLayer(function (layer) {
     map.removeLayer(layer);
   });
+  
+  //and reset the current line
+  map.currentLine = null;
 
 }
 
@@ -412,8 +471,11 @@ function onDownload() {
 
     $("#addMarkerOnNextClick").on('click', function() {
       whatHappenOnNextMapClick = 'marker';
-      map.currentLine.spliceLatLngs(-1,1);
-      map.currentLine = null;
+      if (map.currentLine) {
+        //delete the last point from the current line since it was not clicked
+        map.currentLine.spliceLatLngs(-1,1);
+        map.currentLine = null;
+      }
       return false;
     });
 
